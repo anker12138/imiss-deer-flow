@@ -1,6 +1,6 @@
 # DeerFlow - Unified Development Environment
 
-.PHONY: help config config-upgrade check install dev dev-daemon start stop up down clean docker-init docker-start docker-stop docker-logs docker-logs-frontend docker-logs-gateway
+.PHONY: help config config-upgrade check install dev dev-daemon dev-no-nginx stop-no-nginx status-no-nginx start stop up down clean docker-init docker-start docker-stop docker-logs docker-logs-frontend docker-logs-gateway
 
 PYTHON ?= python
 
@@ -12,6 +12,9 @@ help:
 	@echo "  make install         - Install all dependencies (frontend + backend)"
 	@echo "  make setup-sandbox   - Pre-pull sandbox container image (recommended)"
 	@echo "  make dev             - Start all services in development mode (with hot-reloading)"
+	@echo "  make dev-no-nginx    - Start local services without nginx (no sudo needed)"
+	@echo "  make stop-no-nginx   - Stop local no-nginx services"
+	@echo "  make status-no-nginx - Show local no-nginx service status"
 	@echo "  make dev-daemon      - Start all services in background (daemon mode)"
 	@echo "  make start           - Start all services in production mode (optimized, no hot-reloading)"
 	@echo "  make stop            - Stop all running services"
@@ -87,6 +90,16 @@ setup-sandbox:
 # Start all services in development mode (with hot-reloading)
 dev:
 	@./scripts/serve.sh --dev
+
+# Start local services without nginx (for no-sudo environments)
+dev-no-nginx:
+	@./scripts/dev-no-nginx.sh start
+
+stop-no-nginx:
+	@./scripts/dev-no-nginx.sh stop
+
+status-no-nginx:
+	@./scripts/dev-no-nginx.sh status
 
 # Start all services in production mode (with optimizations)
 start:
