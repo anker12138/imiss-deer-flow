@@ -3,7 +3,6 @@ import logging
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware
 from langchain_core.runnables import RunnableConfig
-
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
@@ -22,6 +21,16 @@ from deerflow.models import create_chat_model
 logger = logging.getLogger(__name__)
 
 
+def _tool_name(tool: object) -> str:
+    """Return a stable display name for a tool instance."""
+    return getattr(tool, "name", tool.__class__.__name__)
+
+
+def _middleware_name(middleware: object) -> str:
+    """Return middleware class name for diagnostics."""
+    return middleware.__class__.__name__
+
+
 def _resolve_model_name(requested_model_name: str | None = None) -> str:
     """Resolve a runtime model name safely, falling back to default if invalid. Returns None if no models are configured."""
     app_config = get_app_config()
@@ -35,7 +44,6 @@ def _resolve_model_name(requested_model_name: str | None = None) -> str:
     if requested_model_name and requested_model_name != default_model_name:
         logger.warning(f"Model '{requested_model_name}' not found in config; fallback to default model '{default_model_name}'.")
     return default_model_name
-
 
 def _create_summarization_middleware() -> SummarizationMiddleware | None:
     """Create and configure the summarization middleware from config."""
@@ -314,21 +322,92 @@ def make_lead_agent(config: RunnableConfig):
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
-        system_prompt = apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, available_skills=set(["bootstrap"]))
+        system_prompt = apply_prompt_template(
+            subagent_enabled=subagent_enabled,
+            max_concurrent_subagents=max_concurrent_subagents,
+            available_skills={"bootstrap"},
+        )
+        tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent]
+        middlewares = _build_middlewares(config, model_name=model_name)
+
+        logger.info(
+            "Lead agent startup config: %s",
+            {
+                "mode": "bootstrap",
+                "agent_name": agent_name,
+                "requested_model_name": requested_model_name,
+                "resolved_model_name": model_name,
+                "model_supports_thinking": model_config.supports_thinking,
+                "model_supports_vision": model_config.supports_vision,
+                "thinking_enabled": thinking_enabled,
+                "reasoning_effort": reasoning_effort,
+                "is_plan_mode": is_plan_mode,
+                "subagent_enabled": subagent_enabled,
+                "max_concurrent_subagents": max_concurrent_subagents,
+                "tool_groups": None,
+                "tool_count": len(tools),
+                "tools": [_tool_name(tool) for tool in tools],
+                "tool_names": [_tool_name(tool) for tool in tools],
+                "middleware_count": len(middlewares),
+                "middleware_names": [_middleware_name(middleware) for middleware in middlewares],
+                "prompt_agent_name": None,
+                "prompt_available_skills": ["bootstrap"],
+                "system_prompt": system_prompt,
+            },
+        )
 
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
-            tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent],
-            middleware=_build_middlewares(config, model_name=model_name),
+            tools=tools,
+            middleware=middlewares,
             system_prompt=system_prompt,
             state_schema=ThreadState,
         )
 
     # Default lead agent (unchanged behavior)
+    tools = get_available_tools(
+        model_name=model_name,
+        groups=agent_config.tool_groups if agent_config else None,
+        subagent_enabled=subagent_enabled,
+    )
+    middlewares = _build_middlewares(config, model_name=model_name, agent_name=agent_name)
+    system_prompt = apply_prompt_template(
+        subagent_enabled=subagent_enabled,
+        max_concurrent_subagents=max_concurrent_subagents,
+        agent_name=agent_name,
+    )
+
+    logger.info(
+        "Lead agent startup config: %s",
+        {
+            "mode": "default",
+            "agent_name": agent_name,
+            "requested_model_name": requested_model_name,
+            "resolved_model_name": model_name,
+            "agent_config_model": agent_config.model if agent_config else None,
+            "model_supports_thinking": model_config.supports_thinking,
+            "model_supports_vision": model_config.supports_vision,
+            "thinking_enabled": thinking_enabled,
+            "reasoning_effort": reasoning_effort,
+            "is_plan_mode": is_plan_mode,
+            "subagent_enabled": subagent_enabled,
+            "max_concurrent_subagents": max_concurrent_subagents,
+            "tool_groups": agent_config.tool_groups if agent_config else None,
+            "tool_count": len(tools),
+            "tools": [_tool_name(tool) for tool in tools],
+            "tool_names": [_tool_name(tool) for tool in tools],
+            "middleware_count": len(middlewares),
+            "middleware_names": [_middleware_name(middleware) for middleware in middlewares],
+            "prompt_agent_name": agent_name,
+            "prompt_available_skills": None,
+            "system_prompt": system_prompt,
+        },
+    )
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled),
-        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
-        system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name),
+        tools=tools,
+        middleware=middlewares,
+        system_prompt=system_prompt,
         state_schema=ThreadState,
     )
