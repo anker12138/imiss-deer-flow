@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import mimetypes
+import os
 import time
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from app.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage, ResolvedAttachment
@@ -21,10 +25,27 @@ DEFAULT_ASSISTANT_ID = "lead_agent"
 DEFAULT_RUN_CONFIG: dict[str, Any] = {"recursion_limit": 100}
 DEFAULT_RUN_CONTEXT: dict[str, Any] = {
     "thinking_enabled": True,
-    "is_plan_mode": False,
-    "subagent_enabled": False,
+    "is_plan_mode": True,
+    "subagent_enabled": True,
 }
 STREAM_UPDATE_MIN_INTERVAL_SECONDS = 0.35
+
+
+def _env_truthy(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_event_log_dir() -> Path:
+    """Resolve default directory for per-thread event logs."""
+    try:
+        from deerflow.config.paths import get_paths
+
+        return get_paths().base_dir / "channels" / "run_events"
+    except Exception:
+        return Path("logs") / "run_events"
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -340,6 +361,12 @@ class ChannelManager:
         self._semaphore: asyncio.Semaphore | None = None
         self._running = False
         self._task: asyncio.Task | None = None
+        self._event_log_enabled = _env_truthy("DEERFLOW_RUN_EVENT_LOG_ENABLED", default=False)
+        self._event_log_dir = Path(os.getenv("DEERFLOW_RUN_EVENT_LOG_DIR", str(_default_event_log_dir())))
+
+        if self._event_log_enabled:
+            self._event_log_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Run event JSONL logging enabled: dir=%s", self._event_log_dir)
 
     def _resolve_session_layer(self, msg: InboundMessage) -> tuple[dict[str, Any], dict[str, Any]]:
         channel_layer = _as_dict(self._channel_sessions.get(msg.channel_name))
@@ -501,6 +528,18 @@ class ChannelManager:
             context=run_context,
         )
 
+        self._append_run_event(
+            thread_id,
+            {
+                "event": "runs.wait.result",
+                "assistant_id": assistant_id,
+                "input": {"messages": [{"role": "human", "content": msg.text}]},
+                "run_config": run_config,
+                "run_context": run_context,
+                "result": result,
+            },
+        )
+
         response_text = _extract_response_text(result)
         artifacts = _extract_artifacts(result)
 
@@ -551,6 +590,17 @@ class ChannelManager:
         stream_error: BaseException | None = None
 
         try:
+            self._append_run_event(
+                thread_id,
+                {
+                    "event": "runs.stream.start",
+                    "assistant_id": assistant_id,
+                    "input": {"messages": [{"role": "human", "content": msg.text}]},
+                    "run_config": run_config,
+                    "run_context": run_context,
+                },
+            )
+
             async for chunk in client.runs.stream(
                 thread_id,
                 assistant_id,
@@ -561,6 +611,15 @@ class ChannelManager:
             ):
                 event = getattr(chunk, "event", "")
                 data = getattr(chunk, "data", None)
+
+                self._append_run_event(
+                    thread_id,
+                    {
+                        "event": "runs.stream.chunk",
+                        "chunk_event": event,
+                        "chunk_data": data,
+                    },
+                )
 
                 if event == "messages-tuple":
                     accumulated_text, current_message_id = _accumulate_stream_text(streamed_buffers, current_message_id, data)
@@ -593,9 +652,24 @@ class ChannelManager:
                 last_publish_at = now
         except Exception as exc:
             stream_error = exc
+            self._append_run_event(
+                thread_id,
+                {
+                    "event": "runs.stream.error",
+                    "error": repr(exc),
+                },
+            )
             logger.exception("[Manager] streaming error: thread_id=%s", thread_id)
         finally:
             result = last_values if last_values is not None else {"messages": [{"type": "ai", "content": latest_text}]}
+            self._append_run_event(
+                thread_id,
+                {
+                    "event": "runs.stream.final",
+                    "result": result,
+                    "stream_error": repr(stream_error) if stream_error else None,
+                },
+            )
             response_text = _extract_response_text(result)
             artifacts = _extract_artifacts(result)
             response_text, attachments = _prepare_artifact_delivery(thread_id, response_text, artifacts)
@@ -627,6 +701,27 @@ class ChannelManager:
                     thread_ts=msg.thread_ts,
                 )
             )
+
+    def _append_run_event(self, thread_id: str, payload: dict[str, Any]) -> None:
+        """Append one run-event record to a per-thread JSONL file."""
+        if not self._event_log_enabled:
+            return
+
+        ts = datetime.now(timezone.utc).isoformat()
+        record = {
+            "ts": ts,
+            "thread_id": thread_id,
+            **payload,
+        }
+
+        safe_thread_id = "".join(ch for ch in thread_id if ch.isalnum() or ch in {"-", "_"}) or "unknown"
+        output_path = self._event_log_dir / f"{safe_thread_id}.jsonl"
+
+        try:
+            with output_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            logger.exception("Failed to append run event log for thread_id=%s", thread_id)
 
     # -- command handling --------------------------------------------------
 
