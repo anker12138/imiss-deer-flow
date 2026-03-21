@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+<<<<<<< HEAD
 import json
 import logging
 import mimetypes
@@ -11,6 +12,12 @@ import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+=======
+import logging
+import mimetypes
+import time
+from collections.abc import Mapping
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
 from typing import Any
 
 from app.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage, ResolvedAttachment
@@ -25,12 +32,18 @@ DEFAULT_ASSISTANT_ID = "lead_agent"
 DEFAULT_RUN_CONFIG: dict[str, Any] = {"recursion_limit": 100}
 DEFAULT_RUN_CONTEXT: dict[str, Any] = {
     "thinking_enabled": True,
+<<<<<<< HEAD
     "is_plan_mode": True,
     "subagent_enabled": True,
+=======
+    "is_plan_mode": False,
+    "subagent_enabled": False,
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
 }
 STREAM_UPDATE_MIN_INTERVAL_SECONDS = 0.35
 
 
+<<<<<<< HEAD
 def _env_truthy(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -48,6 +61,8 @@ def _default_event_log_dir() -> Path:
         return Path("logs") / "run_events"
 
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -361,12 +376,15 @@ class ChannelManager:
         self._semaphore: asyncio.Semaphore | None = None
         self._running = False
         self._task: asyncio.Task | None = None
+<<<<<<< HEAD
         self._event_log_enabled = _env_truthy("DEERFLOW_RUN_EVENT_LOG_ENABLED", default=False)
         self._event_log_dir = Path(os.getenv("DEERFLOW_RUN_EVENT_LOG_DIR", str(_default_event_log_dir())))
 
         if self._event_log_enabled:
             self._event_log_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Run event JSONL logging enabled: dir=%s", self._event_log_dir)
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
 
     def _resolve_session_layer(self, msg: InboundMessage) -> tuple[dict[str, Any], dict[str, Any]]:
         channel_layer = _as_dict(self._channel_sessions.get(msg.channel_name))
@@ -528,6 +546,7 @@ class ChannelManager:
             context=run_context,
         )
 
+<<<<<<< HEAD
         self._append_run_event(
             thread_id,
             {
@@ -540,6 +559,8 @@ class ChannelManager:
             },
         )
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
         response_text = _extract_response_text(result)
         artifacts = _extract_artifacts(result)
 
@@ -590,6 +611,7 @@ class ChannelManager:
         stream_error: BaseException | None = None
 
         try:
+<<<<<<< HEAD
             self._append_run_event(
                 thread_id,
                 {
@@ -601,6 +623,8 @@ class ChannelManager:
                 },
             )
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
             async for chunk in client.runs.stream(
                 thread_id,
                 assistant_id,
@@ -612,6 +636,7 @@ class ChannelManager:
                 event = getattr(chunk, "event", "")
                 data = getattr(chunk, "data", None)
 
+<<<<<<< HEAD
                 self._append_run_event(
                     thread_id,
                     {
@@ -621,6 +646,8 @@ class ChannelManager:
                     },
                 )
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
                 if event == "messages-tuple":
                     accumulated_text, current_message_id = _accumulate_stream_text(streamed_buffers, current_message_id, data)
                     if accumulated_text:
@@ -652,6 +679,7 @@ class ChannelManager:
                 last_publish_at = now
         except Exception as exc:
             stream_error = exc
+<<<<<<< HEAD
             self._append_run_event(
                 thread_id,
                 {
@@ -670,6 +698,11 @@ class ChannelManager:
                     "stream_error": repr(stream_error) if stream_error else None,
                 },
             )
+=======
+            logger.exception("[Manager] streaming error: thread_id=%s", thread_id)
+        finally:
+            result = last_values if last_values is not None else {"messages": [{"type": "ai", "content": latest_text}]}
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
             response_text = _extract_response_text(result)
             artifacts = _extract_artifacts(result)
             response_text, attachments = _prepare_artifact_delivery(thread_id, response_text, artifacts)
@@ -702,6 +735,7 @@ class ChannelManager:
                 )
             )
 
+<<<<<<< HEAD
     def _append_run_event(self, thread_id: str, payload: dict[str, Any]) -> None:
         """Append one run-event record to a per-thread JSONL file."""
         if not self._event_log_enabled:
@@ -723,6 +757,8 @@ class ChannelManager:
         except Exception:
             logger.exception("Failed to append run event log for thread_id=%s", thread_id)
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
     # -- command handling --------------------------------------------------
 
     async def _handle_command(self, msg: InboundMessage) -> None:

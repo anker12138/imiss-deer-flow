@@ -7,7 +7,10 @@ from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+<<<<<<< HEAD
 from deerflow.agents.middlewares.run_history_middleware import RunHistoryMiddleware
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
@@ -242,9 +245,12 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # Add MemoryMiddleware (after TitleMiddleware)
     middlewares.append(MemoryMiddleware(agent_name=agent_name))
 
+<<<<<<< HEAD
     # Add RunHistoryMiddleware to persist full per-run message history for local debugging.
     middlewares.append(RunHistoryMiddleware())
 
+=======
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
     # Add ViewImageMiddleware only if the current model supports vision.
     # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
     app_config = get_app_config()
@@ -407,7 +413,11 @@ def make_lead_agent(config: RunnableConfig):
             "system_prompt": system_prompt,
         },
     )
+<<<<<<< HEAD
     print('create_agent')
+=======
+
+>>>>>>> a10b9a0db8988ef1ec005da9f4514097cb2720c5
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
         tools=tools,
