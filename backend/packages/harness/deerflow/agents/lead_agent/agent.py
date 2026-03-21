@@ -403,7 +403,7 @@ def make_lead_agent(config: RunnableConfig):
             "system_prompt": system_prompt,
         },
     )
-
+    print('create_agent')
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
         tools=tools,
